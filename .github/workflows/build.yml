@@ -12,31 +12,45 @@ on:
 jobs:
   build-linux:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        linkage: [dynamic, static]
 
     steps:
     - uses: actions/checkout@v7
   
-    - name: Install libudev and libhidapi
+    - name: Install dependencies
       run: sudo apt-get install -y libudev-dev libhidapi-dev
-    
-    - name: Compile SonixFlasherC
+
+    - name: Cache hidapi static
+      if: matrix.linkage == 'static'
+      uses: actions/cache@v4
+      id: cache-hidapi
+      with:
+        path: /usr/local/lib/libhidapi-libusb.a
+        key: hidapi-static-linux-v1
+
+    - name: Build hidapi static
+      if: matrix.linkage == 'static' && steps.cache-hidapi.outputs.cache-hit != 'true'
       run: |
-        make clean package
+        sudo apt-get install -y libusb-1.0-0-dev autoconf automake libtool
+        git clone --depth 1 https://github.com/libusb/hidapi.git
+        cd hidapi && ./bootstrap && ./configure --enable-static --disable-shared
+        make && sudo make install
     
-    - name: Find artifact files
-      id: find-files
-      run: |
-        find . -type f -name "sonixflasher-*.zip" -print > artifact_files.txt
-        files=$(cat artifact_files.txt)
-        echo "FILES=$files" >> $GITHUB_ENV
+    - name: Compile
+      run: make clean ${{ matrix.linkage == 'static' && 'static' || '' }} package ${{ matrix.linkage == 'static' && 'STATIC=1' || '' }}
 
     - uses: actions/upload-artifact@v7
       with:
-        name: SonixFlasherC-Linux
-        path: ${{ env.FILES }}
+        name: SonixFlasherC-Linux-${{ matrix.linkage }}
+        path: sonixflasher-*.zip
   
   build-mac:
     runs-on: macos-latest
+    strategy:
+      matrix:
+        linkage: [dynamic, static]
     env:
       CPATH: /opt/homebrew/include
       LIBRARY_PATH: /opt/homebrew/lib
@@ -44,29 +58,38 @@ jobs:
     steps:
     - uses: actions/checkout@v7
 
-    - name: Install hidapi
-      run: |
-        brew update
-        brew install hidapi
+    - name: Install dependencies
+      run: brew install hidapi
 
-    - name: Compile SonixFlasherC 
-      run: |
-        make clean package
+    - name: Cache hidapi static
+      if: matrix.linkage == 'static'
+      uses: actions/cache@v4
+      id: cache-hidapi
+      with:
+        path: /opt/homebrew/lib/libhidapi.a
+        key: hidapi-static-macos-v1
 
-    - name: Find artifact files
-      id: find-files
+    - name: Build hidapi static
+      if: matrix.linkage == 'static' && steps.cache-hidapi.outputs.cache-hit != 'true'
       run: |
-        find . -type f -name "sonixflasher-*.zip" -print > artifact_files.txt
-        files=$(cat artifact_files.txt)
-        echo "FILES=$files" >> $GITHUB_ENV
+        brew install autoconf automake libtool
+        git clone --depth 1 https://github.com/libusb/hidapi.git
+        cd hidapi && ./bootstrap && ./configure --enable-static --disable-shared --prefix=/opt/homebrew
+        make && sudo make install
+
+    - name: Compile
+      run: make clean ${{ matrix.linkage == 'static' && 'static' || '' }} package ${{ matrix.linkage == 'static' && 'STATIC=1' || '' }}
 
     - uses: actions/upload-artifact@v7
       with:
-        name: SonixFlasherC-macOS
-        path: ${{ env.FILES }}
+        name: SonixFlasherC-macOS-${{ matrix.linkage }}
+        path: sonixflasher-*.zip
         
   build-windows:
     runs-on: windows-latest
+    strategy:
+      matrix:
+        linkage: [dynamic, static]
     defaults:
       run:
         shell: msys2 {0}
@@ -78,22 +101,30 @@ jobs:
         msystem: MINGW64
         update: true
         install: make p7zip mingw-w64-x86_64-cc mingw-w64-x86_64-pkg-config mingw-w64-x86_64-hidapi
+
+    - name: Cache hidapi static
+      if: matrix.linkage == 'static'
+      uses: actions/cache@v4
+      id: cache-hidapi
+      with:
+        path: /mingw64/lib/libhidapi.a
+        key: hidapi-static-windows-v1
+
+    - name: Build hidapi static
+      if: matrix.linkage == 'static' && steps.cache-hidapi.outputs.cache-hit != 'true'
+      run: |
+        pacman -S --noconfirm autoconf automake libtool git
+        git clone --depth 1 https://github.com/libusb/hidapi.git
+        cd hidapi && ./bootstrap && ./configure --enable-static --disable-shared
+        make && make install
     
-    - name: Compile SonixFlasherC 
-      run: |
-        make clean sonixflasher package
-   
-    - name: Find artifact files
-      id: find-files
-      run: |
-        find . -type f -name "sonixflasher-*.zip" -print > artifact_files.txt
-        files=$(cat artifact_files.txt)
-        echo "FILES=$files" >> $GITHUB_ENV
+    - name: Compile
+      run: make clean ${{ matrix.linkage == 'static' && 'static' || '' }} sonixflasher package ${{ matrix.linkage == 'static' && 'STATIC=1' || '' }}
 
     - uses: actions/upload-artifact@v7
       with:
-        name: SonixFlasherC-Windows
-        path: ${{ env.FILES }}
+        name: SonixFlasherC-Windows-${{ matrix.linkage }}
+        path: sonixflasher-*.zip
 
   publish_release:
     name: Publish (Release)
