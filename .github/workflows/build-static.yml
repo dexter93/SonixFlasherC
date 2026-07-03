@@ -1,0 +1,187 @@
+name: Build Static Binaries
+
+on:
+  push:
+    branches: [ main ]
+  release:
+    types:
+      - published
+  pull_request:
+  workflow_dispatch:
+     
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libudev-dev libusb-1.0-0-dev autoconf automake libtool
+    
+    - name: Build hidapi from source (static)
+      run: |
+        git clone https://github.com/libusb/hidapi.git
+        cd hidapi
+        ./bootstrap
+        ./configure --enable-static --disable-shared
+        make
+        sudo make install
+        sudo ldconfig
+    
+    - name: Compile SonixFlasherC (mostly static)
+      run: |
+        # Static hidapi, dynamic system libs (udev, usb are ABI stable)
+        gcc -Wall -I/usr/local/include/hidapi -c sonixflasher.c -o sonixflasher.o
+        gcc sonixflasher.o -o sonixflasher \
+          /usr/local/lib/libhidapi-libusb.a \
+          -lusb-1.0 -ludev -lpthread
+        strip sonixflasher
+        
+    - name: Verify binary
+      run: |
+        file sonixflasher
+        ldd sonixflasher
+        ls -lh sonixflasher
+    
+    - name: Package binary
+      run: |
+        ARCH=$(uname -m)
+        mkdir -p dist
+        cp sonixflasher dist/
+        cd dist
+        tar -czf sonixflasher-linux-${ARCH}-static.tar.gz sonixflasher
+        
+    - uses: actions/upload-artifact@v4
+      with:
+        name: SonixFlasherC-Linux-Static
+        path: dist/sonixflasher-linux-*-static.tar.gz
+  
+  build-mac:
+    runs-on: macos-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Build hidapi from source (static)
+      run: |
+        brew install autoconf automake libtool
+        git clone https://github.com/libusb/hidapi.git
+        cd hidapi
+        ./bootstrap
+        ./configure --enable-static --disable-shared
+        make
+        sudo make install
+
+    - name: Compile SonixFlasherC (static)
+      run: |
+        # Static linking with hidapi embedded
+        gcc -Wall -I/usr/local/include/hidapi -c sonixflasher.c -o sonixflasher.o
+        gcc sonixflasher.o -o sonixflasher \
+          /usr/local/lib/libhidapi.a \
+          -framework IOKit -framework CoreFoundation -framework AppKit
+        strip sonixflasher
+        
+    - name: Verify static binary
+      run: |
+        file sonixflasher
+        otool -L sonixflasher
+        ls -lh sonixflasher
+
+    - name: Package binary
+      run: |
+        ARCH=$(uname -m)
+        mkdir -p dist
+        cp sonixflasher dist/
+        cd dist
+        tar -czf sonixflasher-macos-${ARCH}-static.tar.gz sonixflasher
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: SonixFlasherC-macOS-Static
+        path: dist/sonixflasher-macos-*-static.tar.gz
+        
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+    - uses: actions/checkout@v4
+    - uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          make
+          git
+          zip
+          autoconf
+          automake
+          libtool
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-pkg-config
+    
+    - name: Build hidapi from source (static)
+      run: |
+        git clone https://github.com/libusb/hidapi.git
+        cd hidapi
+        ./bootstrap
+        ./configure --enable-static --disable-shared
+        make
+        make install
+    
+    - name: Compile SonixFlasherC (static)
+      run: |
+        # Static linking with hidapi embedded
+        gcc -Wall -I/mingw64/include/hidapi -c sonixflasher.c -o sonixflasher.o
+        gcc -static sonixflasher.o -o sonixflasher.exe \
+          /mingw64/lib/libhidapi.a \
+          -lsetupapi -lwinmm -lws2_32 -static-libgcc
+        strip sonixflasher.exe
+   
+    - name: Verify static binary
+      run: |
+        file sonixflasher.exe
+        ldd sonixflasher.exe || echo "Statically linked (expected)"
+        ls -lh sonixflasher.exe
+        
+    - name: Package binary
+      run: |
+        mkdir -p dist
+        cp sonixflasher.exe dist/
+        cd dist
+        zip sonixflasher-windows-x86_64-static.zip sonixflasher.exe
+
+    - uses: actions/upload-artifact@v4
+      with:
+        name: SonixFlasherC-Windows-Static
+        path: dist/sonixflasher-windows-*-static.zip
+
+  publish_release:
+    name: Publish (Release)
+    runs-on: ubuntu-latest
+
+    needs: [build-linux, build-mac, build-windows]
+
+    if: github.event.release.tag_name
+
+    steps:
+    - uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Display structure of downloaded files
+      run: ls -R artifacts
+
+    - uses: softprops/action-gh-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        name: ${{ github.event.release.name }}
+        files: |
+          artifacts/**/*
+        fail_on_unmatched_files: true
