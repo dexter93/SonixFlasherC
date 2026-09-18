@@ -182,8 +182,7 @@ jobs:
           export SDK=$(xcrun --sdk macosx --show-sdk-path)
           make clean
           make STATIC=1 BACKEND=libusb \
-            CFLAGS="-Wall -Iinclude -arch arm64 -arch x86_64 -isysroot $SDK -mmacosx-version-min=11.0" \
-            LDFLAGS="-arch arm64 -arch x86_64 -isysroot $SDK -mmacosx-version-min=11.0"
+            ARCHFLAGS="-arch arm64 -arch x86_64 -isysroot $SDK -mmacosx-version-min=11.0"
           lipo -info sonixflasher
           zip -j sonixflasher-macos-universal.zip sonixflasher
 
@@ -212,6 +211,7 @@ jobs:
           msystem: UCRT64
           update: true
           install: >-
+            git
             make
             p7zip
             autoconf

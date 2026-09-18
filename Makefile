@@ -14,15 +14,14 @@ else ifeq ($(OS),Windows_NT)
 	OS := windows
 endif
 
-# deal with stupid Windows not having 'cc'
 ifeq (default,$(origin CC))
   CC = gcc
 endif
 
-# Select USB backend: libusb (default) or hidapi
 BACKEND ?= libusb
 STATIC ?= 0
 PKG_CONFIG ?= pkg-config
+ARCHFLAGS ?=
 
 ifeq ($(BACKEND),hidapi)
 ifeq ($(OS),macos)
@@ -50,20 +49,20 @@ endef
 ifeq "$(OS)" "macos"
 
 ifeq "$(BACKEND)" "hidapi"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 SRCS_BACKEND = src/usb_device_hidapi.c
 else ifeq "$(BACKEND)" "libusb"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 ifeq "$(STATIC)" "1"
-LIBS += $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
 else
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
 
-LIBS += -framework IOKit -framework CoreFoundation -framework AppKit
+PKG_LIBS += -framework IOKit -framework CoreFoundation -framework AppKit
 EXE=
 
 endif
@@ -71,20 +70,20 @@ endif
 ifeq "$(OS)" "windows"
 
 ifeq "$(BACKEND)" "hidapi"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 SRCS_BACKEND = src/usb_device_hidapi.c
 else ifeq "$(BACKEND)" "libusb"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 ifeq "$(STATIC)" "1"
-LIBS += $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
 else
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
 
-LIBS += -lsetupapi -lwinmm -lole32 -static-libgcc
+PKG_LIBS += -lsetupapi -lwinmm -lole32 -static-libgcc
 EXE=.exe
 
 endif
@@ -92,15 +91,15 @@ endif
 ifeq "$(OS)" "linux"
 
 ifeq "$(BACKEND)" "hidapi"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 SRCS_BACKEND = src/usb_device_hidapi.c
 else ifeq "$(BACKEND)" "libusb"
-CFLAGS += $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
+PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 ifeq "$(STATIC)" "1"
-LIBS += $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --static --libs $(PKG_NAME))
 else
-LIBS += $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
+PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
@@ -112,7 +111,10 @@ endif
 SRCS := $(filter-out src/usb_device_hidapi.c src/usb_device_libusb.c,$(wildcard src/*.c)) $(SRCS_BACKEND)
 OBJS := $(SRCS:.c=.o)
 
-CFLAGS += -Wall -Iinclude
+CFLAGS += -Wall -Iinclude $(PKG_CFLAGS) $(ARCHFLAGS)
+LIBS += $(PKG_LIBS)
+LDFLAGS += $(ARCHFLAGS)
+
 CLANG ?= clang
 
 all: sonixflasher
@@ -123,7 +125,7 @@ src/%.o: src/%.c
 
 sonixflasher: $(OBJS)
 	$(call check_pkg_config)
-	$(CC) $(CFLAGS) $(OBJS) -o $@$(EXE) $(LIBS)
+	$(CC) $(CFLAGS) $(LDFLAGS) $(OBJS) -o $@$(EXE) $(LIBS)
 ifeq "$(STATIC)" "1"
 	strip $@$(EXE)
 endif
