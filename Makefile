@@ -21,7 +21,6 @@ endif
 BACKEND ?= libusb
 STATIC ?= 0
 PKG_CONFIG ?= pkg-config
-ARCHFLAGS ?=
 
 ifeq ($(BACKEND),hidapi)
 ifeq ($(OS),macos)
@@ -47,7 +46,6 @@ define check_pkg_config
 endef
 
 ifeq "$(OS)" "macos"
-
 ifeq "$(BACKEND)" "hidapi"
 PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
@@ -61,14 +59,11 @@ PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
-
 PKG_LIBS += -framework IOKit -framework CoreFoundation -framework AppKit
 EXE=
-
 endif
 
 ifeq "$(OS)" "windows"
-
 ifeq "$(BACKEND)" "hidapi"
 PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
@@ -82,14 +77,11 @@ PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
-
 PKG_LIBS += -lsetupapi -lwinmm -lole32 -static-libgcc
 EXE=.exe
-
 endif
 
 ifeq "$(OS)" "linux"
-
 ifeq "$(BACKEND)" "hidapi"
 PKG_CFLAGS := $(shell $(PKG_CONFIG) --cflags $(PKG_NAME))
 PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
@@ -103,17 +95,14 @@ PKG_LIBS := $(shell $(PKG_CONFIG) --libs $(PKG_NAME))
 endif
 SRCS_BACKEND = src/usb_device_libusb.c
 endif
-
 EXE=
-
 endif
 
 SRCS := $(filter-out src/usb_device_hidapi.c src/usb_device_libusb.c,$(wildcard src/*.c)) $(SRCS_BACKEND)
 OBJS := $(SRCS:.c=.o)
 
-CFLAGS += -Wall -Iinclude $(PKG_CFLAGS) $(ARCHFLAGS)
+CFLAGS += -Wall -Iinclude $(PKG_CFLAGS)
 LIBS += $(PKG_LIBS)
-LDFLAGS += $(ARCHFLAGS)
 
 CLANG ?= clang
 
