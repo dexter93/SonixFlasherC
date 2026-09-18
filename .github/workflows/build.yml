@@ -67,7 +67,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libusb-1.0-0-dev p7zip-full
+          sudo apt-get install -y build-essential pkg-config libusb-1.0-0-dev libudev-dev p7zip-full
 
       - name: Build release binary
         run: |
