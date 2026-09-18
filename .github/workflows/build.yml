@@ -106,7 +106,24 @@ jobs:
         run: |
           make clean
           make release
-          7z a sonixflasher-windows-x86_64.zip sonixflasher.exe
+
+          dll="$(pkg-config --variable=prefix libusb-1.0)/bin/libusb-1.0.dll"
+
+          test -f "$dll" || {
+            echo "error: libusb DLL not found: $dll" >&2
+            exit 1
+          }
+
+          cp "$dll" .
+
+          7z a sonixflasher-windows-x86_64.zip \
+            sonixflasher.exe \
+            libusb-1.0.dll
+
+      - name: Verify Windows dependencies
+        run: |
+          objdump -p sonixflasher.exe | grep 'DLL Name'
+          test -f libusb-1.0.dll
 
       - uses: actions/upload-artifact@v7
         with:
