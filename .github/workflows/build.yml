@@ -61,15 +61,21 @@ jobs:
     name: Release Linux
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v6
 
       - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential pkg-config libusb-1.0-0-dev libudev-dev p7zip-full
+          sudo apt-get install -y \
+            build-essential \
+            pkg-config \
+            libusb-1.0-0-dev \
+            libudev-dev \
+            p7zip-full
 
-      - name: Build release binary
+      - name: Build release package
         run: |
           make clean
           make release
@@ -77,16 +83,19 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: sonixflasher-linux-x86_64
+          name: release-linux
           path: sonixflasher-linux-x86_64.zip
+          if-no-files-found: error
 
   release-windows:
     name: Release Windows
     if: github.event_name == 'release' || github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
+
     defaults:
       run:
         shell: msys2 {0}
+
     steps:
       - uses: actions/checkout@v6
 
@@ -102,8 +111,10 @@ jobs:
             mingw-w64-ucrt-x86_64-pkg-config
             mingw-w64-ucrt-x86_64-libusb
 
-      - name: Build release binary
+      - name: Build release package
         run: |
+          set -euo pipefail
+
           make clean
           make release
 
@@ -116,19 +127,35 @@ jobs:
 
           cp "$dll" .
 
+          test -f sonixflasher.exe
+          test -f libusb-1.0.dll
+
+          echo "Bundling:"
+          ls -lh sonixflasher.exe libusb-1.0.dll
+
           7z a sonixflasher-windows-x86_64.zip \
             sonixflasher.exe \
             libusb-1.0.dll
 
-      - name: Verify Windows dependencies
+      - name: Verify Windows package
         run: |
+          set -euo pipefail
+
+          echo "Executable dependencies:"
           objdump -p sonixflasher.exe | grep 'DLL Name'
-          test -f libusb-1.0.dll
+
+          echo
+          echo "ZIP contents:"
+          7z l sonixflasher-windows-x86_64.zip
+
+          7z l sonixflasher-windows-x86_64.zip | grep -q 'sonixflasher.exe'
+          7z l sonixflasher-windows-x86_64.zip | grep -q 'libusb-1.0.dll'
 
       - uses: actions/upload-artifact@v7
         with:
-          name: sonixflasher-windows-x86_64
+          name: release-windows
           path: sonixflasher-windows-x86_64.zip
+          if-no-files-found: error
 
   release-macos:
     name: Release macOS (${{ matrix.arch }})
@@ -141,22 +168,33 @@ jobs:
             arch: arm64
           - os: macos-26-intel
             arch: x86_64
+
     runs-on: ${{ matrix.os }}
+
     steps:
       - uses: actions/checkout@v6
 
       - name: Install deps
         run: brew install libusb
 
-      - name: Build native release binary
+      - name: Build release package
         run: |
+          set -euo pipefail
+
           make clean
           make release
 
+          test -f sonixflasher
+
+          zip "sonixflasher-macos-${{ matrix.arch }}.zip" sonixflasher
+
+          echo "ZIP contents:"
+          unzip -l "sonixflasher-macos-${{ matrix.arch }}.zip"
+
       - uses: actions/upload-artifact@v7
         with:
-          name: sonixflasher-macos-${{ matrix.arch }}
-          path: sonixflasher
+          name: release-macos-${{ matrix.arch }}
+          path: sonixflasher-macos-${{ matrix.arch }}.zip
           if-no-files-found: error
 
   merge-macos-universal:
@@ -164,50 +202,81 @@ jobs:
     needs: release-macos
     if: ${{ always() && needs.release-macos.result == 'success' }}
     runs-on: macos-latest
+
     steps:
-      - name: Download arm64 binary
+      - name: Download arm64 package
         uses: actions/download-artifact@v7
         with:
-          name: sonixflasher-macos-arm64
+          name: release-macos-arm64
           path: arm64
 
-      - name: Download x86_64 binary
+      - name: Download x86_64 package
         uses: actions/download-artifact@v7
         with:
-          name: sonixflasher-macos-x86_64
+          name: release-macos-x86_64
           path: x86_64
 
-      - name: Create universal binary
+      - name: Extract binaries
         run: |
           set -euo pipefail
-          chmod +x arm64/sonixflasher x86_64/sonixflasher
-          lipo -create arm64/sonixflasher x86_64/sonixflasher -output sonixflasher
+
+          unzip -o arm64/sonixflasher-macos-arm64.zip -d arm64/extracted
+          unzip -o x86_64/sonixflasher-macos-x86_64.zip -d x86_64/extracted
+
+          chmod +x arm64/extracted/sonixflasher
+          chmod +x x86_64/extracted/sonixflasher
+
+      - name: Create universal package
+        run: |
+          set -euo pipefail
+
+          lipo \
+            -create \
+            arm64/extracted/sonixflasher \
+            x86_64/extracted/sonixflasher \
+            -output sonixflasher
+
           lipo -info sonixflasher
-          zip -j sonixflasher-macos-universal.zip sonixflasher
+
+          zip sonixflasher-macos-universal.zip sonixflasher
+
+          echo "Universal ZIP contents:"
+          unzip -l sonixflasher-macos-universal.zip
 
       - uses: actions/upload-artifact@v7
         with:
-          name: sonixflasher-macos-universal
+          name: release-macos-universal
           path: sonixflasher-macos-universal.zip
+          if-no-files-found: error
 
   publish-release:
     name: Publish release artifacts
     if: github.event_name == 'release'
+
     needs:
       - release-linux
       - release-windows
       - merge-macos-universal
+
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/download-artifact@v7
+      - name: Download release packages
+        uses: actions/download-artifact@v7
         with:
           path: artifacts
-          pattern: sonixflasher-*
-          merge-multiple: false
+          pattern: release-*
+          merge-multiple: true
 
-      - uses: softprops/action-gh-release@v3
+      - name: Show release packages
+        run: |
+          set -euo pipefail
+          find artifacts -type f -name '*.zip' -print
+
+      - name: Publish release packages
+        uses: softprops/action-gh-release@v3
         with:
           files: |
-            artifacts/**/*.zip
+            artifacts/*.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
