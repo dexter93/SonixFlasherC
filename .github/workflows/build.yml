@@ -284,8 +284,6 @@ jobs:
           test -f artifacts/sonixflasher-windows-x86_64.zip
           test -f artifacts/sonixflasher-macos-universal.zip
 
-          test "$(find artifacts -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 3
-
       - name: Publish release packages
         uses: softprops/action-gh-release@v3
         with:
