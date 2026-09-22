@@ -77,9 +77,14 @@ jobs:
 
       - name: Build release package
         run: |
+          set -euo pipefail
+
           make clean
           make release
+
           7z a sonixflasher-linux-x86_64.zip sonixflasher
+
+          7z l sonixflasher-linux-x86_64.zip
 
       - uses: actions/upload-artifact@v7
         with:
@@ -216,7 +221,7 @@ jobs:
           name: release-macos-x86_64
           path: x86_64
 
-      - name: Extract binaries
+      - name: Extract architecture binaries
         run: |
           set -euo pipefail
 
@@ -261,22 +266,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Download release packages
+      - name: Download release artifacts
         uses: actions/download-artifact@v7
         with:
-          path: artifacts
           pattern: release-*
+          path: artifacts
           merge-multiple: true
 
-      - name: Show release packages
+      - name: Verify release packages
         run: |
           set -euo pipefail
-          find artifacts -type f -name '*.zip' -print
+
+          echo "Downloaded artifacts:"
+          find artifacts -maxdepth 1 -type f -print
+
+          test -f artifacts/sonixflasher-linux-x86_64.zip
+          test -f artifacts/sonixflasher-windows-x86_64.zip
+          test -f artifacts/sonixflasher-macos-universal.zip
+
+          test "$(find artifacts -maxdepth 1 -type f -name '*.zip' | wc -l)" -eq 3
 
       - name: Publish release packages
         uses: softprops/action-gh-release@v3
         with:
           files: |
-            artifacts/*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+            artifacts/sonixflasher-linux-x86_64.zip
+            artifacts/sonixflasher-windows-x86_64.zip
+            artifacts/sonixflasher-macos-universal.zip
